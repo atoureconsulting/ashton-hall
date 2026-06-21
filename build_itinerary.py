@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-# Builds the Ashton Hall Africa Tour itinerary with a toggle between
-# Foundation (10 nights) and With Benin (12 nights).
+# Builds the Ashton Hall Africa Tour itinerary page with a 3-way tab toggle:
+#   Foundation (10n) / With Benin (12n) / Extended (14n).
+# Every leg and route stop shows nights + days, where days = nights + 1
+# (1 night = 2 days, 2 nights = 3 days).
 #
-# SETUP: Before running, make sure the source file exists:
+# SETUP: source file (for the embedded Atoure logo) must exist first:
 #   cp /home/user/website/ashton-hall-itinerary.html /home/user/itinerary_v4.html
-# (used only to extract the embedded Atoure logo)
 #
 # OUTPUT: /home/user/itinerary_v5.html
 # DEPLOY: cp /home/user/itinerary_v5.html /home/user/website/ashton-hall-itinerary.html
-#         then git add/commit/push from /home/user/website
+#         then git add/commit/push from /home/user/website (NOT the MCP file API).
 import re, datetime
 
 SRC = "/home/user/itinerary_v4.html"
@@ -48,6 +49,7 @@ AIRPORTS = {
 DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
 def dlabel(d): return f"{d.day} {d.strftime('%b')} &middot; {DOW[d.weekday()]}"
 def daterange_label(start, end):
+    if start == end: return f"{start.day} {start.strftime('%b')}"
     if start.month == end.month: return f"{start.day} to {end.day} {end.strftime('%b')}"
     return f"{start.day} {start.strftime('%b')} to {end.day} {end.strftime('%b')}"
 
@@ -99,6 +101,8 @@ def depart_day(daynum, date):
 
 def render_leg(legid, country, dates, kinds, prev, first, nxt, nights_label, tbc):
     head_flag = f'<span class="leg-flag">{flag(country,36,24)}</span>'
+    nnum = int(re.match(r'(\d+)', nights_label).group(1))
+    meta_role = f'{nights_label} &middot; {nnum+1} days'   # days = nights + 1
     start, end = dates[0], dates[-1]
     days_html = ""
     dn = 1
@@ -111,7 +115,7 @@ def render_leg(legid, country, dates, kinds, prev, first, nxt, nights_label, tbc
     return (f'<section class="leg"><div class="leg-head"><div class="leg-id">{legid}</div>'
             f'<div class="leg-title">{head_flag}{country}</div>'
             f'<div class="leg-meta"><div class="leg-dates">{daterange_label(start,end)}</div>'
-            f'<div class="leg-days">{nights_label}</div></div></div>'
+            f'<div class="leg-days">{meta_role}</div></div></div>'
             f'<div class="timeline">{days_html}</div>'
             f'<div class="leg-foot">{foot}</div></section>')
 
@@ -119,8 +123,10 @@ def route_strip(stops):
     parts = []
     for i,(c,n) in enumerate(stops):
         if i: parts.append('<div class="stop-arr">&#8594;</div>')
+        nnum = int(re.match(r'(\d+)', n).group(1))
+        label = f'{n} &middot; {nnum+1}d'
         parts.append(f'<div class="stop"><div class="stop-flag">{flag(c,33,22)}</div>'
-                     f'<div class="stop-name">{c}</div><div class="stop-days">{n}</div></div>')
+                     f'<div class="stop-name">{c}</div><div class="stop-days">{label}</div></div>')
     return '<div class="route">'+''.join(parts)+'</div>'
 
 def D(m,d): return datetime.date(2026,m,d)
@@ -144,6 +150,19 @@ benin_it = [
  ("Nigeria",    [D(7,8), D(7,9)],  ["arr","depart"],  "2 nights", False),
 ]
 
+# EXTENDED: 14 nights, 28 Jun-11 Jul. Benin and Cameroon are 1-night hops;
+# Ethiopia sits 2 nights after Cameroon. No Morocco on this version.
+ext_it = [
+ ("Nigeria",    [D(6,28),D(6,29)], ["arr","stream"],  "2 nights", False),
+ ("Ghana",      [D(6,30),D(7,1)],  ["arr","stream"],  "2 nights", False),
+ ("Ivory Coast",[D(7,2), D(7,3)],  ["arr","stream"],  "2 nights", False),
+ ("Benin",      [D(7,4)],          ["arr"],           "1 night",  False),
+ ("Senegal",    [D(7,5), D(7,6)],  ["arr","stream"],  "2 nights", False),
+ ("Cameroon",   [D(7,7)],          ["arr"],           "1 night",  False),
+ ("Ethiopia",   [D(7,8), D(7,9)],  ["arr","stream"],  "2 nights", False),
+ ("Nigeria",    [D(7,10),D(7,11)], ["arr","depart"],  "2 nights", False),
+]
+
 def build_legs(itin):
     out = ""
     for i, leg in enumerate(itin):
@@ -161,7 +180,6 @@ def stats_block(trav, countries, nights, drange):
             f'<div class="stat"><div class="v" style="font-family:\'Cormorant Garamond\',serif">{drange}</div><div class="l">2026</div></div>'
             '</div>')
 
-TBC_S = TBC
 CALLOUT = ('<div class="seclabel">How Each Day Runs</div>'
  '<div class="callout"><ul>'
  '<li>Arrival is always in the evening. Day 1 of each country is a travel and arrival day.</li>'
@@ -170,8 +188,8 @@ CALLOUT = ('<div class="seclabel">How Each Day Runs</div>'
  '<li>SIM cards are arranged by the ground partner the night before each country, ready on arrival.</li>'
  '<li>Experience and live stream run in the afternoon, to overlap the US morning with the local afternoon and evening.</li>'
  '<li>Each stream runs approximately 3 to 5 hours.</li>'
- '<li>Experience and stream content is '+TBC_S+' while curation is finalised.</li>'
- '<li>Flights are shown for planning. Nothing is booked yet, so all flight details are '+TBC_S+'.</li>'
+ '<li>Experience and stream content is '+TBC+' while curation is finalised.</li>'
+ '<li>Flights are shown for planning. Nothing is booked yet, so all flight details are '+TBC+'.</li>'
  '</ul></div>')
 
 f_route = route_strip([("Nigeria","2n"),("Ghana","2n"),("Ivory Coast","2n"),("Morocco","2n"),("Nigeria","2n")])
@@ -217,18 +235,41 @@ benin_view = ('<div class="view view-benin">'
  + b_open
  + '</div></div>')
 
+x_route = route_strip([("Nigeria","2n"),("Ghana","2n"),("Ivory Coast","2n"),("Benin","1n"),("Senegal","2n"),("Cameroon","1n"),("Ethiopia","2n"),("Nigeria","2n")])
+x_note = ('<div class="note"><b>Extended route &mdash; 14 nights, 28 Jun &ndash; 11 Jul.</b> '
+ 'Nigeria &rarr; Ghana &rarr; Ivory Coast &rarr; Benin &rarr; Senegal &rarr; Cameroon &rarr; Ethiopia &rarr; Nigeria. '
+ 'Benin and Cameroon are single-night hops; Ethiopia sits two nights after Cameroon. No Morocco on this version.</div>')
+x_open = ('<div class="seclabel">Open Items to Confirm</div><div class="open"><ol>'
+ '<li>Single-night hops (Benin 4 Jul, Cameroon 7 Jul): confirm a short activation window is workable.</li>'
+ '<li>Hotel per country (all TBC).</li><li>Ground security team and contact per country.</li>'
+ '<li>Experience and stream content per country.</li><li>Flight legs: airlines, flight numbers and exact times.</li>'
+ '<li>Tight Cameroon &rarr; Ethiopia &rarr; Nigeria sequencing at the end of the tour.</li>'
+ '<li>Final Nigeria departure timing (evening of 11 Jul).</li></ol></div>')
+
+ext_view = ('<div class="view view-ext">'
+ + stats_block(12, 7, 14, "28 Jun &ndash; 11 Jul")
+ + '<div class="wrap">'
+ + x_note
+ + '<div class="seclabel">The Route</div>' + x_route
+ + CALLOUT
+ + '<div class="seclabel">Day by Day</div>'
+ + build_legs(ext_it)
+ + x_open
+ + '</div></div>')
+
 EXTRA_CSS = (
  '.viewtoggle{display:flex;gap:0;background:#16130c;padding:0;}'
- '.viewtoggle .tg{flex:1 1 50%;text-align:center;padding:14px 10px;cursor:pointer;'
+ '.viewtoggle .tg{flex:1 1 0;text-align:center;padding:14px 8px;cursor:pointer;'
  'font-family:\'Jost\',sans-serif;font-size:clamp(10px,2.3vw,12px);letter-spacing:.18em;'
  'text-transform:uppercase;color:#8a7d5f;background:#16130c;border:none;'
  'border-bottom:2px solid transparent;transition:all .2s;user-select:none;}'
  '.viewtoggle .tg small{display:block;letter-spacing:.06em;font-size:9.5px;color:#6b6048;margin-top:3px;text-transform:none;}'
- '#vf:checked~.viewtoggle .tg-f,#vs:checked~.viewtoggle .tg-s{color:var(--paper);background:#0d0c0a;border-bottom-color:var(--gold);}'
- '#vf:checked~.viewtoggle .tg-f small,#vs:checked~.viewtoggle .tg-s small{color:var(--gold-lt);}'
+ '#vf:checked~.viewtoggle .tg-f,#vs:checked~.viewtoggle .tg-s,#vx:checked~.viewtoggle .tg-x{color:var(--paper);background:#0d0c0a;border-bottom-color:var(--gold);}'
+ '#vf:checked~.viewtoggle .tg-f small,#vs:checked~.viewtoggle .tg-s small,#vx:checked~.viewtoggle .tg-x small{color:var(--gold-lt);}'
  '.view{display:none;}'
  '#vf:checked~.view-foundation{display:block;}'
  '#vs:checked~.view-benin{display:block;}'
+ '#vx:checked~.view-ext{display:block;}'
 )
 
 CSS = re.search(r'<style>(.*?)</style>', v4, re.S).group(1) + EXTRA_CSS
@@ -251,19 +292,22 @@ HEADER = ('<header>'
  '<div class="rule"></div></header>')
 
 TOGGLE = ('<div class="viewtoggle">'
- '<label class="tg tg-f" for="vf">Foundation<small>10 nights &middot; 28 Jun&ndash;7 Jul</small></label>'
- '<label class="tg tg-s" for="vs">With Benin<small>12 nights &middot; 28 Jun&ndash;9 Jul</small></label>'
+ '<label class="tg tg-f" for="vf">Foundation<small>10n &middot; 28 Jun&ndash;7 Jul</small></label>'
+ '<label class="tg tg-s" for="vs">With Benin<small>12n &middot; 28 Jun&ndash;9 Jul</small></label>'
+ '<label class="tg tg-x" for="vx">Extended<small>14n &middot; 28 Jun&ndash;11 Jul</small></label>'
  '</div>')
 
 html = (HEAD
  + '<div class="sheet">'
  + '<input type="radio" name="view" id="vf" checked hidden>'
  + '<input type="radio" name="view" id="vs" hidden>'
+ + '<input type="radio" name="view" id="vx" hidden>'
  + '<div class="ribbon">Internal working draft &middot; not for external distribution</div>'
  + HEADER
  + TOGGLE
  + foundation_view
  + benin_view
+ + ext_view
  + '<footer><span>Atoure Consulting</span><span class="g">Last updated 20 Jun 2026 &middot; Working draft</span></footer>'
  + '</div></body></html>')
 
