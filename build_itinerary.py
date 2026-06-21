@@ -3,6 +3,8 @@
 #   Foundation (10n) / With Benin (12n) / Extended (14n).
 # Every leg and route stop shows nights + days, where days = nights + 1
 # (1 night = 2 days, 2 nights = 3 days).
+# The first three countries (Nigeria, Ghana, Ivory Coast) have locked dates
+# and render green; remaining countries render orange ("Dates pending").
 #
 # SETUP: source file (for the embedded Atoure logo) must exist first:
 #   cp /home/user/website/ashton-hall-itinerary.html /home/user/itinerary_v4.html
@@ -15,10 +17,12 @@ import re, datetime
 SRC = "/home/user/itinerary_v4.html"
 OUT = "/home/user/itinerary_v5.html"
 
+# ---- pull the embedded Atoure logo data-URI out of the v4 file ----
 v4 = open(SRC, encoding="utf-8").read()
 m = re.search(r'class="logo-mono" src="(data:image/png;base64,[^"]+)"', v4)
 LOGO = m.group(1)
 
+# ---- flag SVGs (33x22 for route strip, 36x24 for leg head) ----
 FLAGS = {
  "Nigeria":'<rect width="20" height="40" fill="#008751"/><rect x="20" width="20" height="40" fill="#fff"/><rect x="40" width="20" height="40" fill="#008751"/>',
  "Ghana":'<rect width="60" height="13.33" fill="#ce1126"/><rect y="13.33" width="60" height="13.34" fill="#fcd116"/><rect y="26.67" width="60" height="13.33" fill="#006b3f"/><polygon points="30.00,14.00 31.47,17.98 35.71,18.15 32.38,20.77 33.53,24.85 30.00,22.50 26.47,24.85 27.62,20.77 24.29,18.15 28.53,17.98" fill="#000"/>',
@@ -47,22 +51,30 @@ AIRPORTS = {
 }
 
 DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-def dlabel(d): return f"{d.day} {d.strftime('%b')} &middot; {DOW[d.weekday()]}"
+def dlabel(d):  # d is a date
+    return f"{d.day} {d.strftime('%b')} &middot; {DOW[d.weekday()]}"
+
 def daterange_label(start, end):
-    if start == end: return f"{start.day} {start.strftime('%b')}"
-    if start.month == end.month: return f"{start.day} to {end.day} {end.strftime('%b')}"
+    if start == end:
+        return f"{start.day} {start.strftime('%b')}"
+    if start.month == end.month:
+        return f"{start.day} to {end.day} {end.strftime('%b')}"
     return f"{start.day} {start.strftime('%b')} to {end.day} {end.strftime('%b')}"
 
 TBC = '<span class="tbc">TBC</span>'
 
+# ---- day-card renderers ----
 def arrival_day(daynum, date, country, prev, first, tbc):
     city, airport, code = AIRPORTS[country]
     if first:
-        fl = (f'<li><b>20:00&ndash;21:00</b> &mdash; International arrival at {airport} ({code}), {city}, {country}. Airline and flight number {TBC}.</li>')
+        fl = (f'<li><b>20:00&ndash;21:00</b> &mdash; International arrival at {airport} '
+              f'({code}), {city}, {country}. Airline and flight number {TBC}.</li>')
     else:
-        fl = (f'<li><b>20:00</b> &mdash; Flight {prev} to {city}, {country}. Arriving at {airport} ({code}). Airline and flight number {TBC}. Estimated arrival 20:00 local.</li>')
+        fl = (f'<li><b>20:00</b> &mdash; Flight {prev} to {city}, {country}. Arriving at '
+              f'{airport} ({code}). Airline and flight number {TBC}. Estimated arrival 20:00 local.</li>')
     chip = '<span class="chip chip-arrival">&#9992; Arrival</span>'
-    if tbc: chip += ' <span class="chip chip-tbc">&#9711; Pending</span>'
+    if tbc:
+        chip += ' <span class="chip chip-tbc">&#9711; Pending</span>'
     return (f'<div class="day arrival"><div class="dot"></div><div class="day-body">'
             f'<div class="day-top"><span class="day-label">Day {daynum} &middot; {dlabel(date)}</span>{chip}</div>'
             f'<div class="day-title">Travel and arrival</div><ul class="day-items">'
@@ -85,6 +97,14 @@ def stream_day(daynum, date):
             f'<li><b>20:00</b> &mdash; Stream ends. Return to hotel, team debrief.</li>'
             f'<li><b>22:00</b> &mdash; Rest.</li></ul></div></div>')
 
+def open_day(daynum, date):
+    return (f'<div class="day tbc"><div class="dot"></div><div class="day-body">'
+            f'<div class="day-top"><span class="day-label">Day {daynum} &middot; {dlabel(date)}</span>'
+            f'<span class="chip chip-tbc">&#9711; Open</span></div>'
+            f'<div class="day-title">Open day</div><ul class="day-items">'
+            f'<li>Plan {TBC}. To decide: second experience and stream, rest day, or secondary activation.</li>'
+            f'</ul></div></div>')
+
 def depart_day(daynum, date):
     return (f'<div class="day depart"><div class="dot"></div><div class="day-body">'
             f'<div class="day-top"><span class="day-label">Day {daynum} &middot; {dlabel(date)}</span>'
@@ -99,39 +119,62 @@ def depart_day(daynum, date):
             f'<li><b>22:00+</b> &mdash; Departure: return flight home. Timing and airline {TBC}.</li>'
             f'</ul></div></div>')
 
-def render_leg(legid, country, dates, kinds, prev, first, nxt, nights_label, tbc):
+def status_chip(confirmed):
+    if confirmed:
+        return '<span class="chip chip-confirmed">&#10003; Dates locked</span>'
+    return '<span class="chip chip-pending">&#9711; Dates pending</span>'
+
+def render_leg(legid, country, dates, kinds, prev, first, nxt, nights_label, tbc, confirmed=False):
     head_flag = f'<span class="leg-flag">{flag(country,36,24)}</span>'
     nnum = int(re.match(r'(\d+)', nights_label).group(1))
-    meta_role = f'{nights_label} &middot; {nnum+1} days'   # days = nights + 1
+    meta_role = f'{nights_label} &middot; {nnum+1} days'
     start, end = dates[0], dates[-1]
     days_html = ""
     dn = 1
     for date, kind in zip(dates, kinds):
-        if kind == "arr":    days_html += arrival_day(dn, date, country, prev, first, tbc)
-        elif kind == "stream": days_html += stream_day(dn, date)
-        elif kind == "depart": days_html += depart_day(dn, date)
+        if kind == "arr":
+            days_html += arrival_day(dn, date, country, prev, first, tbc)
+        elif kind == "stream":
+            days_html += stream_day(dn, date)
+        elif kind == "open":
+            days_html += open_day(dn, date)
+        elif kind == "depart":
+            days_html += depart_day(dn, date)
         dn += 1
-    foot = f'&#8594; Travel to {nxt}, arriving in the evening' if nxt else '&#9873; Tour ends &middot; return flight home'
-    return (f'<section class="leg"><div class="leg-head"><div class="leg-id">{legid}</div>'
+    if nxt:
+        foot = f'&#8594; Travel to {nxt}, arriving in the evening'
+    else:
+        foot = '&#9873; Tour ends &middot; return flight home'
+    legcls = "leg leg-confirmed" if confirmed else "leg leg-pending"
+    return (f'<section class="{legcls}"><div class="leg-head"><div class="leg-id">{legid}</div>'
             f'<div class="leg-title">{head_flag}{country}</div>'
             f'<div class="leg-meta"><div class="leg-dates">{daterange_label(start,end)}</div>'
-            f'<div class="leg-days">{meta_role}</div></div></div>'
+            f'<div class="leg-days">{meta_role}</div>'
+            f'<div class="leg-status">{status_chip(confirmed)}</div></div></div>'
             f'<div class="timeline">{days_html}</div>'
             f'<div class="leg-foot">{foot}</div></section>')
 
 def route_strip(stops):
+    # stops: list of (country, nights_str like "2n", confirmed_bool)
     parts = []
-    for i,(c,n) in enumerate(stops):
+    for i,stop in enumerate(stops):
+        c, n = stop[0], stop[1]
+        confirmed = stop[2] if len(stop) > 2 else False
         if i: parts.append('<div class="stop-arr">&#8594;</div>')
         nnum = int(re.match(r'(\d+)', n).group(1))
         label = f'{n} &middot; {nnum+1}d'
-        parts.append(f'<div class="stop"><div class="stop-flag">{flag(c,33,22)}</div>'
-                     f'<div class="stop-name">{c}</div><div class="stop-days">{label}</div></div>')
+        cls = "stop confirmed" if confirmed else "stop pending"
+        badge = ('<div class="stop-badge bk">&#10003; Locked</div>' if confirmed
+                 else '<div class="stop-badge bp">Pending</div>')
+        parts.append(f'<div class="{cls}"><div class="stop-flag">{flag(c,33,22)}</div>'
+                     f'<div class="stop-name">{c}</div><div class="stop-days">{label}</div>'
+                     f'{badge}</div>')
     return '<div class="route">'+''.join(parts)+'</div>'
 
+# ---- itinerary definitions ----
 def D(m,d): return datetime.date(2026,m,d)
 
-# FOUNDATION: 10 nights, 28 Jun-7 Jul
+# FOUNDATION: Nigeria > Ghana > Ivory Coast > Morocco > Nigeria (2 nights each)
 foundation = [
  ("Nigeria",    [D(6,28),D(6,29)], ["arr","stream"],  "2 nights", False),
  ("Ghana",      [D(6,30),D(7,1)],  ["arr","stream"],  "2 nights", False),
@@ -140,7 +183,7 @@ foundation = [
  ("Nigeria",    [D(7,6), D(7,7)],  ["arr","depart"],  "2 nights", False),
 ]
 
-# WITH BENIN: 12 nights, 28 Jun-9 Jul
+# WITH BENIN: Nigeria > Ghana > Ivory Coast > Benin > Morocco > Nigeria (2 nights each)
 benin_it = [
  ("Nigeria",    [D(6,28),D(6,29)], ["arr","stream"],  "2 nights", False),
  ("Ghana",      [D(6,30),D(7,1)],  ["arr","stream"],  "2 nights", False),
@@ -150,8 +193,8 @@ benin_it = [
  ("Nigeria",    [D(7,8), D(7,9)],  ["arr","depart"],  "2 nights", False),
 ]
 
-# EXTENDED: 14 nights, 28 Jun-11 Jul. Benin and Cameroon are 1-night hops;
-# Ethiopia sits 2 nights after Cameroon. No Morocco on this version.
+# EXTENDED: Nigeria > Ghana > Ivory Coast > Benin > Senegal > Cameroon > Ethiopia > Nigeria
+# (Benin and Cameroon are 1-night hops; Ethiopia added 2 nights after Cameroon)
 ext_it = [
  ("Nigeria",    [D(6,28),D(6,29)], ["arr","stream"],  "2 nights", False),
  ("Ghana",      [D(6,30),D(7,1)],  ["arr","stream"],  "2 nights", False),
@@ -169,7 +212,9 @@ def build_legs(itin):
         country, dates, kinds, nights_label, tbc = leg
         prev = itin[i-1][0] if i>0 else None
         nxt = itin[i+1][0] if i<len(itin)-1 else None
-        out += render_leg(f"{i+1:02d}", country, dates, kinds, prev, i==0, nxt, nights_label, tbc)
+        first = (i==0)
+        confirmed = (i < 3)  # Nigeria, Ghana, Ivory Coast dates are locked
+        out += render_leg(f"{i+1:02d}", country, dates, kinds, prev, first, nxt, nights_label, tbc, confirmed)
     return out
 
 def stats_block(trav, countries, nights, drange):
@@ -192,7 +237,9 @@ CALLOUT = ('<div class="seclabel">How Each Day Runs</div>'
  '<li>Flights are shown for planning. Nothing is booked yet, so all flight details are '+TBC+'.</li>'
  '</ul></div>')
 
-f_route = route_strip([("Nigeria","2n"),("Ghana","2n"),("Ivory Coast","2n"),("Morocco","2n"),("Nigeria","2n")])
+# FOUNDATION view
+f_route = route_strip([("Nigeria","2n",True),("Ghana","2n",True),("Ivory Coast","2n",True),
+                       ("Morocco","2n",False),("Nigeria","2n",False)])
 f_note = ('<div class="note"><b>Foundation itinerary &mdash; 10 nights, 28 Jun &ndash; 7 Jul.</b> '
  'Nigeria &rarr; Ghana &rarr; Ivory Coast &rarr; Morocco (Marrakech) &rarr; Nigeria. '
  'Starts and ends in Lagos. 2 nights per country.</div>')
@@ -213,7 +260,9 @@ foundation_view = ('<div class="view view-foundation">'
  + f_open
  + '</div></div>')
 
-b_route = route_strip([("Nigeria","2n"),("Ghana","2n"),("Ivory Coast","2n"),("Benin","2n"),("Morocco","2n"),("Nigeria","2n")])
+# WITH BENIN view
+b_route = route_strip([("Nigeria","2n",True),("Ghana","2n",True),("Ivory Coast","2n",True),
+                       ("Benin","2n",False),("Morocco","2n",False),("Nigeria","2n",False)])
 b_note = ('<div class="note"><b>With Benin &mdash; 12 nights, 28 Jun &ndash; 9 Jul.</b> '
  'Nigeria &rarr; Ghana &rarr; Ivory Coast &rarr; Benin &rarr; Morocco (Marrakech) &rarr; Nigeria. '
  'Adds a Benin stop between Ivory Coast and Morocco. 2 nights per country.</div>')
@@ -235,7 +284,10 @@ benin_view = ('<div class="view view-benin">'
  + b_open
  + '</div></div>')
 
-x_route = route_strip([("Nigeria","2n"),("Ghana","2n"),("Ivory Coast","2n"),("Benin","1n"),("Senegal","2n"),("Cameroon","1n"),("Ethiopia","2n"),("Nigeria","2n")])
+# EXTENDED view
+x_route = route_strip([("Nigeria","2n",True),("Ghana","2n",True),("Ivory Coast","2n",True),
+                       ("Benin","1n",False),("Senegal","2n",False),("Cameroon","1n",False),
+                       ("Ethiopia","2n",False),("Nigeria","2n",False)])
 x_note = ('<div class="note"><b>Extended route &mdash; 14 nights, 28 Jun &ndash; 11 Jul.</b> '
  'Nigeria &rarr; Ghana &rarr; Ivory Coast &rarr; Benin &rarr; Senegal &rarr; Cameroon &rarr; Ethiopia &rarr; Nigeria. '
  'Benin and Cameroon are single-night hops; Ethiopia sits two nights after Cameroon. No Morocco on this version.</div>')
@@ -257,6 +309,7 @@ ext_view = ('<div class="view view-ext">'
  + x_open
  + '</div></div>')
 
+# ---- extra CSS for toggle + view switching ----
 EXTRA_CSS = (
  '.viewtoggle{display:flex;gap:0;background:#16130c;padding:0;}'
  '.viewtoggle .tg{flex:1 1 0;text-align:center;padding:14px 8px;cursor:pointer;'
@@ -270,6 +323,20 @@ EXTRA_CSS = (
  '#vf:checked~.view-foundation{display:block;}'
  '#vs:checked~.view-benin{display:block;}'
  '#vx:checked~.view-ext{display:block;}'
+ # ---- confirmed (green) / pending (orange) status ----
+ '.chip-confirmed{background:rgba(31,122,77,.14);color:#1c6f45;border:1px solid rgba(31,122,77,.45);}'
+ '.chip-pending{background:rgba(196,122,30,.12);color:#a8650f;border:1px solid rgba(196,122,30,.45);}'
+ '.leg-status{margin-top:6px;}'
+ '.leg-confirmed .leg-head{border-bottom-color:#1f7a4d;}'
+ '.leg-pending .leg-head{border-bottom-color:#d2913e;}'
+ '.leg-confirmed{border-left:3px solid #1f7a4d;padding-left:14px;border-radius:2px;}'
+ '.leg-pending{border-left:3px solid #d2913e;padding-left:14px;border-radius:2px;}'
+ '.stop{position:relative;border-radius:9px;padding:7px 5px 6px;border:1px solid transparent;}'
+ '.stop.confirmed{background:rgba(31,122,77,.09);border-color:rgba(31,122,77,.32);}'
+ '.stop.pending{background:rgba(196,122,30,.07);border-color:rgba(196,122,30,.28);}'
+ '.stop-badge{margin-top:5px;font-size:8px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;padding:2px 6px;border-radius:20px;display:inline-block;}'
+ '.stop-badge.bk{background:rgba(31,122,77,.16);color:#1c6f45;}'
+ '.stop-badge.bp{background:rgba(196,122,30,.14);color:#a8650f;}'
 )
 
 CSS = re.search(r'<style>(.*?)</style>', v4, re.S).group(1) + EXTRA_CSS
